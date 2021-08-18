@@ -10,6 +10,8 @@ import type { DroppableProvided, DroppableStateSnapshot } from '../../../src';
 import type { Column as ColumnType } from './types';
 import type { Task as TaskType, Id } from '../types';
 
+import { FixedSizeList as List, areEqual } from 'react-window';
+
 type Props = {|
   column: ColumnType,
   tasks: TaskType[],
@@ -64,41 +66,91 @@ export default class Column extends Component<Props> {
     const tasks: TaskType[] = this.props.tasks;
     const selectedTaskIds: Id[] = this.props.selectedTaskIds;
     const draggingTaskId: ?Id = this.props.draggingTaskId;
+    const isSelected = (task: TaskType): boolean =>
+      Boolean(getSelectedMap(selectedTaskIds)[task.id]);
+    const toggleSelection = this.props.toggleSelection;
+    const toggleSelectionInGroup = this.props.toggleSelectionInGroup;
+    const multiSelectTo = this.props.multiSelectTo;
+
+    const Row = React.memo(({ data: tasks, index, style }) => {
+      const task = tasks[index];
+
+      // We are rendering an extra item for the placeholder
+      // Do do this we increased our data set size to include one 'fake' item
+      if (!task) {
+        return null;
+      }
+
+      // Faking some nice spacing around the items
+      // const patchedStyle = {
+      //   ...style,
+      //   left: style.left + grid,
+      //   top: style.top + grid,
+      //   width: `calc(${style.width} - ${grid * 2}px)`,
+      //   height: style.height - grid,
+      // };
+
+      return (
+        <Task
+          task={task}
+          index={index}
+          key={task.id}
+          isSelected={isSelected(task)}
+          isGhosting={false}
+          selectionCount={selectedTaskIds.length}
+          toggleSelection={toggleSelection}
+          toggleSelectionInGroup={toggleSelectionInGroup}
+          multiSelectTo={multiSelectTo}
+        />
+      );
+    }, areEqual);
+
+    const items = tasks.filter(
+      (task: TaskType) =>
+        !draggingTaskId ||
+        (Boolean(draggingTaskId) &&
+          (!isSelected(task) || draggingTaskId === task.id)),
+    );
+
     return (
       <Container>
         <Title>{column.title}</Title>
-        <Droppable droppableId={column.id}>
-          {(provided: DroppableProvided, snapshot: DroppableStateSnapshot) => (
-            <TaskList
+        <Droppable
+          droppableId={column.id}
+          mode="virtual"
+          renderClone={(provided, snapshot, rubric) => (
+            <div
+              {...provided.draggableProps}
+              {...provided.dragHandleProps}
               ref={provided.innerRef}
-              isDraggingOver={snapshot.isDraggingOver}
-              {...provided.droppableProps}
             >
-              {tasks.map((task: TaskType, index: number) => {
-                const isSelected: boolean = Boolean(
-                  getSelectedMap(selectedTaskIds)[task.id],
-                );
-                const isGhosting: boolean =
-                  isSelected &&
-                  Boolean(draggingTaskId) &&
-                  draggingTaskId !== task.id;
-                return (
-                  <Task
-                    task={task}
-                    index={index}
-                    key={task.id}
-                    isSelected={isSelected}
-                    isGhosting={isGhosting}
-                    selectionCount={selectedTaskIds.length}
-                    toggleSelection={this.props.toggleSelection}
-                    toggleSelectionInGroup={this.props.toggleSelectionInGroup}
-                    multiSelectTo={this.props.multiSelectTo}
-                  />
-                );
-              })}
-              {provided.placeholder}
-            </TaskList>
+              Item id: {tasks[rubric.source.index].id}
+            </div>
           )}
+        >
+          {(provided: DroppableProvided, snapshot: DroppableStateSnapshot) => {
+            const itemCount: number = snapshot.isUsingPlaceholder
+              ? items.length + 1
+              : items.length;
+
+            return (
+              <List
+                height={500}
+                itemCount={itemCount}
+                itemSize={110}
+                width={300}
+                outerRef={provided.innerRef}
+                style={{
+                  transition: 'background-color 0.2s ease',
+                  // We add this spacing so that when we drop into an empty list we will animate to the correct visual position.
+                  padding: grid,
+                }}
+                itemData={items}
+              >
+                {Row}
+              </List>
+            );
+          }}
         </Droppable>
       </Container>
     );
